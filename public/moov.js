@@ -1398,12 +1398,11 @@
     PORTAL_ID
   )}/${encodeURIComponent(FORM_GUID)}`;
 
-  // ✅ IMPORTANT:
+  // OPTIONAL:
   // Map DISPLAY labels (your UI) -> HubSpot INTERNAL VALUES (property option "value")
-  // You MUST fill these from HubSpot property option internal values.
+  // If you leave this empty, we fallback to sending the UI value.
   const MAP = {
     move_timeframe: {
-      // examples (replace with real internal values)
       // "ASAP": "asap",
       // "February": "february",
     },
@@ -1424,7 +1423,7 @@
     property_currently_tenanted_submitted: {
       // "Yes": "yes",
       // "No": "no",
-    }
+    },
   };
 
   function getCookie(name) {
@@ -1467,20 +1466,24 @@
 
   function mapDropdown(propInternalName, uiValue) {
     const table = MAP[propInternalName] || {};
-    return table[uiValue] || ""; // if not mapped, send empty (avoids invalid option)
+    // ✅ if mapped -> send mapped internal value
+    if (uiValue && table[uiValue]) return table[uiValue];
+
+    // ✅ fallback (no extra questions needed)
+    // NOTE: If HubSpot requires internal option values strictly, they must provide them.
+    return uiValue || "";
   }
 
   function buildFields(formEl) {
-    // Contact details (standard HS)
+    // Contact details (standard HS property names)
     const firstname = formEl.querySelector("#First-name")?.value?.trim() || "";
     const lastname  = formEl.querySelector("#Last-name")?.value?.trim() || "";
     const email     = formEl.querySelector('input[type="email"]')?.value?.trim() || "";
     const phone     = formEl.querySelector("#Telephone-or-mobile-number")?.value?.trim() || "";
 
-    // Your hidden fields (UI values)
-    const moveUI   = getInputVal(formEl, "move-date");       // e.g. ASAP / February
-    const reasonUI = getInputVal(formEl, "selling-reason");  // e.g. Buying onwards
-
+    // Hidden fields (your UI values)
+    const moveUI   = getInputVal(formEl, "move-date");
+    const reasonUI = getInputVal(formEl, "selling-reason");
     const nextHomeUI = getInputVal(formEl, "next-home");
     const relocUI    = getInputVal(formEl, "relocation");
     const tenantedUI = getInputVal(formEl, "tenanted");
@@ -1488,7 +1491,7 @@
     const ownerEstimate = safeNum(getInputVal(formEl, "worth_estimate"));
     const ownerNotSure  = (getInputVal(formEl, "worth_not_sure") || "").toLowerCase() === "true";
 
-    // Outputs
+    // Outputs (from UI)
     const marketRangeText = getText("[data-valuation-price='true']");
     const offerRangeText  = getText("[data-offer-range='true']");
     const validUntilText  = getText("[data-valuation-date='true']");
@@ -1502,18 +1505,17 @@
     const confScore = confScoreMatch ? Number(confScoreMatch[1]) : "";
     const confBand = parseConfidenceBand(confText);
 
-    // ✅ Build fields exactly by spec internal names
     const fields = [
       { name: "firstname", value: firstname },
       { name: "lastname", value: lastname },
       { name: "email", value: email },
       { name: "phone", value: phone },
 
-      // Q1/Q2 (mapped to HS option internal values)
+      // Q1/Q2
       { name: "move_timeframe", value: mapDropdown("move_timeframe", moveUI) },
       { name: "moov_reason_for_sale_submitted", value: mapDropdown("moov_reason_for_sale_submitted", reasonUI) },
 
-      // Q3 conditional (only one should be mapped)
+      // Q3 conditional (only one will realistically have value)
       { name: "moov_next_home_status_submitted", value: mapDropdown("moov_next_home_status_submitted", nextHomeUI) },
       { name: "moov_relocation_work_related_submitted", value: mapDropdown("moov_relocation_work_related_submitted", relocUI) },
       { name: "property_currently_tenanted_submitted", value: mapDropdown("property_currently_tenanted_submitted", tenantedUI) },
@@ -1528,44 +1530,47 @@
       { name: "moov_market_value_high_submitted", value: mv.b === "" ? "" : String(mv.b) },
 
       { name: "moov_confidence_score_submitted", value: confScore === "" ? "" : String(confScore) },
-      { name: "moov_confidence_band_submitted", value: confBand }, // low|medium|high ✅
+      { name: "moov_confidence_band_submitted", value: confBand },
 
       { name: "moov_offer_low_submitted", value: off.a === "" ? "" : String(off.a) },
       { name: "moov_offer_high_submitted", value: off.b === "" ? "" : String(off.b) },
 
-      // Date: send what you display (if they want ISO later, easy change)
-      { name: "moov_offer_valid_until_submitted", value: validUntilText }
+      { name: "moov_offer_valid_until_submitted", value: validUntilText },
     ];
 
-    // remove empty values (HubSpot dislikes some invalid option posts)
     return fields.filter(f => f.value !== "");
   }
 
   async function submitToHubSpot(formEl) {
     try {
       const hutk = getCookie("hubspotutk");
+
       const body = {
         submittedAt: Date.now(),
         fields: buildFields(formEl),
         context: {
           hutk: hutk || undefined,
           pageUri: window.location.href,
-          pageName: document.title
-        }
+          pageName: document.title,
+        },
       };
 
-      // fire & forget
+      // fire & forget (non-blocking)
       fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        keepalive: true
+        keepalive: true,
       }).catch(() => {});
     } catch (e) {
       console.warn("HubSpot submit failed (non-blocking):", e);
     }
   }
 
+  // expose (optional)
+  window.__moovSubmitToHubSpot = submitToHubSpot;
+
+  // attach once (capture phase)
   document.addEventListener(
     "submit",
     (e) => {
@@ -1576,3 +1581,4 @@
     true
   );
 })();
+
