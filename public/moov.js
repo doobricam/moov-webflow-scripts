@@ -1371,12 +1371,14 @@
 (function hubspotDualSubmitMoov() {
   "use strict";
 
+  // ✅ IMPORTANT:
+  // - EU portal -> api-eu1.hsforms.com
+  // - portalId MUST be correct (you confirmed 147192876)
   const PORTAL_ID = "147192876";
-const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
+  const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
 
-const ENDPOINT =
-  `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${PORTAL_ID}/${FORM_GUID}`;
-
+  const ENDPOINT = `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${encodeURIComponent(
+    PORTAL_ID
   )}/${encodeURIComponent(FORM_GUID)}`;
 
   const MAP_SELLING_REASON = {
@@ -1404,23 +1406,15 @@ const ENDPOINT =
     "Not yet — still looking": "not_yet_looking",
   };
 
-  const MAP_YES_NO = {
-    "Yes": "yes",
-    "No": "no",
-  };
+  const MAP_YES_NO = { Yes: "yes", No: "no" };
 
   function mapMoveTimeframe(uiValue) {
     const v = (uiValue || "").trim();
     if (!v) return "";
-
     if (v === "ASAP") return "asap";
     if (v === "6+ months" || v === "6+ Months" || v === "6 months+" || v === "6+ month") return "six_plus_months";
 
-    const months = [
-      "January","February","March","April","May","June",
-      "July","August","September","October","November","December",
-    ];
-
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const idx = months.indexOf(v);
     if (idx === -1) return "";
 
@@ -1433,7 +1427,6 @@ const ENDPOINT =
     if (diff === 3) return "within_3_months";
     if (diff === 4) return "within_4_months";
     if (diff >= 5) return "six_plus_months";
-
     return "within_1_month";
   }
 
