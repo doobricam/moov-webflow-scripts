@@ -982,6 +982,14 @@
           el.textContent = fullAddressText;
         });
 
+        // ✅ Populate HubSpot property hidden fields (address/postcode/uprn)
+        setFieldValue("moov_property_address_submitted", fullAddressText);
+        setFieldValue(
+          "moov_property_postcode_submitted",
+          formatUKPostcode(resolvedAddress?.postcode || selectedAddress?.postcode || "")
+        );
+        setFieldValue("moov_property_uprn_submitted", selectedAddress?.uprn || resolvedAddress?.uprn || "");
+
         if (!getFieldValue("property-type")) {
           setFieldValue("property-type", inferPropertyTypeFromAddressLine(resolvedAddress.address_line_1));
         }
@@ -1085,7 +1093,12 @@
     ============================== */
     function parseConfidence(data) {
       const rawScore =
-        data?.confidence?.score ?? data?.confidenceScore ?? data?.confidence ?? data?.confidence_score ?? data?.score ?? "";
+        data?.confidence?.score ??
+        data?.confidenceScore ??
+        data?.confidence ??
+        data?.confidence_score ??
+        data?.score ??
+        "";
 
       const parsedScore = (() => {
         if (typeof rawScore === "number") return rawScore;
@@ -1139,6 +1152,27 @@
           // Street view even for deskReview
           const streetUrl = pickStreetUrlFromResponse(data);
           if (streetUrl) applyStreetViewToImgs(streetUrl, runId);
+
+          // ✅ Save property image URL for HubSpot (use street view URL)
+          if (streetUrl) {
+            setFieldValue("moov_property_image_url_submitted", streetUrl);
+          }
+
+          // ✅ Try to extract property size (sqm) from valuation response (robust fallbacks)
+          const sizeSqm =
+            data?.propertySizeSqm ??
+            data?.property_size_sqm ??
+            data?.property?.sizeSqm ??
+            data?.property?.size_sqm ??
+            data?.address?.sizeSqm ??
+            data?.address?.size_sqm ??
+            data?.sizeSqm ??
+            data?.size_sqm ??
+            "";
+
+          if (sizeSqm !== "" && Number.isFinite(Number(sizeSqm))) {
+            setFieldValue("moov_property_size_sqm_submitted", String(Number(sizeSqm)));
+          }
 
           const deskReview = data?.deskReview === true;
 
@@ -1383,7 +1417,6 @@
   });
 })();
 
-
 /* ============================
    HUBSPOT DUAL SUBMIT (Moov)
    - Sends Webflow submission to HubSpot (backend ingestion)
@@ -1398,33 +1431,71 @@
     PORTAL_ID
   )}/${encodeURIComponent(FORM_GUID)}`;
 
-  // OPTIONAL:
-  // Map DISPLAY labels (your UI) -> HubSpot INTERNAL VALUES (property option "value")
-  // If you leave this empty, we fallback to sending the UI value.
-  const MAP = {
-    move_timeframe: {
-      // "ASAP": "asap",
-      // "February": "february",
-    },
-    moov_reason_for_sale_submitted: {
-      // "Buying onwards": "buying_onwards",
-      // "Relocating": "relocating",
-      // "Landlord exiting investment": "landlord_exiting_investment",
-    },
-    moov_next_home_status_submitted: {
-      // "Yes": "yes",
-      // "No": "no",
-      // "Not sure": "not_sure",
-    },
-    moov_relocation_work_related_submitted: {
-      // "Yes": "yes",
-      // "No": "no",
-    },
-    property_currently_tenanted_submitted: {
-      // "Yes": "yes",
-      // "No": "no",
-    },
+  /* ============================
+     HUBSPOT INTERNAL VALUE MAPS
+  ============================ */
+
+  const MAP_SELLING_REASON = {
+    "Buying onwards": "buying_onwards",
+    "Relocating": "relocating",
+    "Separation or divorce": "separation_divorce",
+    "Financial challenges": "financial_challenges",
+    "Retiring or moving into care": "retiring_care",
+    "Inherited property": "inherited_property",
+    "Landlord exiting investment": "landlord_exit",
+    "Previous sale fell through": "previous_sale_fell_through",
+    "Not planning to sell": "not_planning_to_sell",
+    "Other / Prefer not to say": "other_prefer_not",
   };
+
+  const MAP_NEXT_HOME = {
+    "Yes – and it’s a new build": "yes_new_build",
+    "Yes - and it’s a new build": "yes_new_build",
+    "Yes — and it’s a new build": "yes_new_build",
+    "Yes – but it’s not a new build": "yes_not_new_build",
+    "Yes - but it’s not a new build": "yes_not_new_build",
+    "Yes — but it’s not a new build": "yes_not_new_build",
+    "Not yet – still looking": "not_yet_looking",
+    "Not yet - still looking": "not_yet_looking",
+    "Not yet — still looking": "not_yet_looking",
+  };
+
+  const MAP_YES_NO = {
+    "Yes": "yes",
+    "No": "no",
+  };
+
+  // move timeframe internal values:
+  // asap, within_1_month, within_2_months, within_3_months, within_4_months, six_plus_months
+  function mapMoveTimeframe(uiValue) {
+    const v = (uiValue || "").trim();
+    if (!v) return "";
+
+    if (v === "ASAP") return "asap";
+    if (v === "6+ months" || v === "6+ Months" || v === "6 months+" || v === "6+ month") return "six_plus_months";
+
+    // Your UI uses month names; convert month -> within_X_month(s)
+    const months = [
+      "January","February","March","April","May","June",
+      "July","August","September","October","November","December",
+    ];
+
+    const idx = months.indexOf(v);
+    if (idx === -1) return "";
+
+    const nowIdx = new Date().getMonth();
+    let diff = idx - nowIdx;
+    if (diff < 0) diff += 12;
+
+    if (diff === 1) return "within_1_month";
+    if (diff === 2) return "within_2_months";
+    if (diff === 3) return "within_3_months";
+    if (diff === 4) return "within_4_months";
+    if (diff >= 5) return "six_plus_months";
+
+    // diff === 0 fallback
+    return "within_1_month";
+  }
 
   function getCookie(name) {
     const m = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
@@ -1443,6 +1514,17 @@
       formEl.querySelector(`[name="${key}"]`)?.value?.trim() ||
       ""
     );
+  }
+
+  function getBoolFromCheckbox(formEl, nameOrId) {
+    const el =
+      formEl.querySelector(`#${CSS.escape(nameOrId)}`) ||
+      formEl.querySelector(`[name="${CSS.escape(nameOrId)}"]`);
+    if (!el) return "";
+    if (el.type === "checkbox") return el.checked ? "true" : "false";
+    const v = (el.value || "").toLowerCase().trim();
+    if (v === "true" || v === "false") return v;
+    return "";
   }
 
   function getText(sel) {
@@ -1464,16 +1546,6 @@
     return "";
   }
 
-  function mapDropdown(propInternalName, uiValue) {
-    const table = MAP[propInternalName] || {};
-    // ✅ if mapped -> send mapped internal value
-    if (uiValue && table[uiValue]) return table[uiValue];
-
-    // ✅ fallback (no extra questions needed)
-    // NOTE: If HubSpot requires internal option values strictly, they must provide them.
-    return uiValue || "";
-  }
-
   function buildFields(formEl) {
     // Contact details (standard HS property names)
     const firstname = formEl.querySelector("#First-name")?.value?.trim() || "";
@@ -1482,14 +1554,24 @@
     const phone     = formEl.querySelector("#Telephone-or-mobile-number")?.value?.trim() || "";
 
     // Hidden fields (your UI values)
-    const moveUI   = getInputVal(formEl, "move-date");
-    const reasonUI = getInputVal(formEl, "selling-reason");
+    const moveUI     = getInputVal(formEl, "move-date");
+    const reasonUI   = getInputVal(formEl, "selling-reason");
     const nextHomeUI = getInputVal(formEl, "next-home");
     const relocUI    = getInputVal(formEl, "relocation");
     const tenantedUI = getInputVal(formEl, "tenanted");
 
     const ownerEstimate = safeNum(getInputVal(formEl, "worth_estimate"));
     const ownerNotSure  = (getInputVal(formEl, "worth_not_sure") || "").toLowerCase() === "true";
+
+    // NEW property fields you added to step-4 form (HubSpot spec)
+    const propAddress  = getInputVal(formEl, "moov_property_address_submitted");
+    const propPostcode = getInputVal(formEl, "moov_property_postcode_submitted");
+    const propUprn     = getInputVal(formEl, "moov_property_uprn_submitted");
+    const propImageUrl = getInputVal(formEl, "moov_property_image_url_submitted");
+    const propSizeSqm  = safeNum(getInputVal(formEl, "moov_property_size_sqm_submitted"));
+
+    // Consent checkbox you renamed
+    const termsAccepted = getBoolFromCheckbox(formEl, "moov_terms_accepted");
 
     // Outputs (from UI)
     const marketRangeText = getText("[data-valuation-price='true']");
@@ -1505,6 +1587,13 @@
     const confScore = confScoreMatch ? Number(confScoreMatch[1]) : "";
     const confBand = parseConfidenceBand(confText);
 
+    // ✅ Map dropdowns to HubSpot INTERNAL VALUES
+    const hsMoveTimeframe = mapMoveTimeframe(moveUI);
+    const hsReason = MAP_SELLING_REASON[reasonUI] || "";
+    const hsNextHome = MAP_NEXT_HOME[nextHomeUI] || "";
+    const hsReloc = MAP_YES_NO[relocUI] || "";
+    const hsTenanted = MAP_YES_NO[tenantedUI] || "";
+
     const fields = [
       { name: "firstname", value: firstname },
       { name: "lastname", value: lastname },
@@ -1512,17 +1601,27 @@
       { name: "phone", value: phone },
 
       // Q1/Q2
-      { name: "move_timeframe", value: mapDropdown("move_timeframe", moveUI) },
-      { name: "moov_reason_for_sale_submitted", value: mapDropdown("moov_reason_for_sale_submitted", reasonUI) },
+      { name: "move_timeframe", value: hsMoveTimeframe },
+      { name: "moov_reason_for_sale_submitted", value: hsReason },
 
-      // Q3 conditional (only one will realistically have value)
-      { name: "moov_next_home_status_submitted", value: mapDropdown("moov_next_home_status_submitted", nextHomeUI) },
-      { name: "moov_relocation_work_related_submitted", value: mapDropdown("moov_relocation_work_related_submitted", relocUI) },
-      { name: "property_currently_tenanted_submitted", value: mapDropdown("property_currently_tenanted_submitted", tenantedUI) },
+      // Q3 conditional (only one will have value)
+      { name: "moov_next_home_status_submitted", value: hsNextHome },
+      { name: "moov_relocation_work_related_submitted", value: hsReloc },
+      { name: "property_currently_tenanted_submitted", value: hsTenanted },
 
       // Q4
       { name: "moov_owner_estimate_value_submitted", value: ownerEstimate === "" ? "" : String(ownerEstimate) },
       { name: "moov_owner_estimate_not_sure_submitted", value: ownerNotSure ? "true" : "false" },
+
+      // Consent
+      { name: "moov_terms_accepted", value: termsAccepted || "" },
+
+      // Property data (NEW)
+      { name: "moov_property_address_submitted", value: propAddress },
+      { name: "moov_property_postcode_submitted", value: propPostcode },
+      { name: "moov_property_uprn_submitted", value: propUprn },
+      { name: "moov_property_image_url_submitted", value: propImageUrl },
+      { name: "moov_property_size_sqm_submitted", value: propSizeSqm === "" ? "" : String(propSizeSqm) },
 
       // Valuation outputs
       { name: "moov_cons_valuation_submitted", value: safeNum(estimatedText) === "" ? "" : String(safeNum(estimatedText)) },
@@ -1538,7 +1637,7 @@
       { name: "moov_offer_valid_until_submitted", value: validUntilText },
     ];
 
-    return fields.filter(f => f.value !== "");
+    return fields.filter((f) => f.value !== "");
   }
 
   async function submitToHubSpot(formEl) {
@@ -1581,4 +1680,3 @@
     true
   );
 })();
-
