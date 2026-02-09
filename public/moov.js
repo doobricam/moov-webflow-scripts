@@ -1371,11 +1371,12 @@
 (function hubspotDualSubmitMoov() {
   "use strict";
 
-  const PORTAL_ID = "14719287";
-  const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
+  const PORTAL_ID = "147192876";
+const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
 
-  const ENDPOINT = `https://api.hsforms.com/submissions/v3/integration/submit/${encodeURIComponent(
-    PORTAL_ID
+const ENDPOINT =
+  `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${PORTAL_ID}/${FORM_GUID}`;
+
   )}/${encodeURIComponent(FORM_GUID)}`;
 
   const MAP_SELLING_REASON = {
