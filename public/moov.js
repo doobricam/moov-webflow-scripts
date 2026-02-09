@@ -1365,6 +1365,10 @@
 
 /* =========================================================
    3) HUBSPOT DUAL SUBMIT (Moov)
+   - Sends Webflow submission to HubSpot (non-blocking)
+   - Guard against duplicate sends
+   - EU endpoint (api-eu1)
+   - Returns fetch so you can await in console
    ========================================================= */
 (function hubspotDualSubmitMoov() {
   "use strict";
@@ -1372,8 +1376,36 @@
   const PORTAL_ID = "147192876";
   const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
 
-  // ✅ EU region (jer ti je portal na app-eu1)
-  const ENDPOINT = `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${PORTAL_ID}/${FORM_GUID}`;
+  // ✅ MUST be EU for your portal (app-eu1)
+  const ENDPOINT =
+    `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${encodeURIComponent(PORTAL_ID)}/${encodeURIComponent(FORM_GUID)}`;
+
+  const MAP_SELLING_REASON = {
+    "Buying onwards": "buying_onwards",
+    "Relocating": "relocating",
+    "Separation or divorce": "separation_divorce",
+    "Financial challenges": "financial_challenges",
+    "Retiring or moving into care": "retiring_care",
+    "Inherited property": "inherited_property",
+    "Landlord exiting investment": "landlord_exit",
+    "Previous sale fell through": "previous_sale_fell_through",
+    "Not planning to sell": "not_planning_to_sell",
+    "Other / Prefer not to say": "other_prefer_not",
+  };
+
+  const MAP_NEXT_HOME = {
+    "Yes – and it’s a new build": "yes_new_build",
+    "Yes - and it’s a new build": "yes_new_build",
+    "Yes — and it’s a new build": "yes_new_build",
+    "Yes – but it’s not a new build": "yes_not_new_build",
+    "Yes - but it’s not a new build": "yes_not_new_build",
+    "Yes — but it’s not a new build": "yes_not_new_build",
+    "Not yet – still looking": "not_yet_looking",
+    "Not yet - still looking": "not_yet_looking",
+    "Not yet — still looking": "not_yet_looking",
+  };
+
+  const MAP_YES_NO = { Yes: "yes", No: "no" };
 
   function getCookie(name) {
     const m = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
@@ -1424,40 +1456,22 @@
     return "";
   }
 
-  const MAP_SELLING_REASON = {
-    "Buying onwards": "buying_onwards",
-    "Relocating": "relocating",
-    "Separation or divorce": "separation_divorce",
-    "Financial challenges": "financial_challenges",
-    "Retiring or moving into care": "retiring_care",
-    "Inherited property": "inherited_property",
-    "Landlord exiting investment": "landlord_exit",
-    "Previous sale fell through": "previous_sale_fell_through",
-    "Not planning to sell": "not_planning_to_sell",
-    "Other / Prefer not to say": "other_prefer_not",
-  };
-
-  const MAP_NEXT_HOME = {
-    "Yes – and it’s a new build": "yes_new_build",
-    "Yes - and it’s a new build": "yes_new_build",
-    "Yes — and it’s a new build": "yes_new_build",
-    "Yes – but it’s not a new build": "yes_not_new_build",
-    "Yes - but it’s not a new build": "yes_not_new_build",
-    "Yes — but it’s not a new build": "yes_not_new_build",
-    "Not yet – still looking": "not_yet_looking",
-    "Not yet - still looking": "not_yet_looking",
-    "Not yet — still looking": "not_yet_looking",
-  };
-
-  const MAP_YES_NO = { Yes: "yes", No: "no" };
-
   function mapMoveTimeframe(uiValue) {
     const v = (uiValue || "").trim();
     if (!v) return "";
-    if (v === "ASAP") return "asap";
-    if (v === "6+ months" || v === "6+ Months" || v === "6 months+" || v === "6+ month") return "six_plus_months";
 
-    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    if (v === "ASAP") return "asap";
+    if (
+      v === "6+ months" ||
+      v === "6+ Months" ||
+      v === "6 months+" ||
+      v === "6+ month"
+    ) return "six_plus_months";
+
+    const months = [
+      "January","February","March","April","May","June",
+      "July","August","September","October","November","December"
+    ];
     const idx = months.indexOf(v);
     if (idx === -1) return "";
 
@@ -1470,6 +1484,7 @@
     if (diff === 3) return "within_3_months";
     if (diff === 4) return "within_4_months";
     if (diff >= 5) return "six_plus_months";
+
     return "within_1_month";
   }
 
@@ -1510,9 +1525,9 @@
     const confBand = parseConfidenceBand(confText);
 
     const hsMoveTimeframe = mapMoveTimeframe(moveUI);
-    const hsReason = MAP_SELLING_REASON[reasonUI] || "";
+    const hsReason   = MAP_SELLING_REASON[reasonUI] || "";
     const hsNextHome = MAP_NEXT_HOME[nextHomeUI] || "";
-    const hsReloc = MAP_YES_NO[relocUI] || "";
+    const hsReloc    = MAP_YES_NO[relocUI] || "";
     const hsTenanted = MAP_YES_NO[tenantedUI] || "";
 
     const fields = [
@@ -1552,6 +1567,7 @@
       { name: "moov_offer_valid_until_submitted", value: validUntilText },
     ];
 
+    // filter blanks, HubSpot is fine with missing optional fields
     return fields.filter((f) => f.value !== "");
   }
 
@@ -1559,7 +1575,7 @@
     try {
       if (!formEl) return;
 
-      // guard duplicates
+      // ✅ guard against duplicates
       if (formEl.dataset.hsSent === "true") return;
       formEl.dataset.hsSent = "true";
       setTimeout(() => { try { delete formEl.dataset.hsSent; } catch (e) {} }, 2000);
@@ -1576,7 +1592,7 @@
         },
       };
 
-      // ✅ return fetch so you can test in console (await)
+      // ✅ return fetch so you can await in console
       return fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1588,8 +1604,10 @@
     }
   }
 
+  // expose for manual test
   window.__moovSubmitToHubSpot = submitToHubSpot;
 
+  // auto-hook WF submit
   document.addEventListener(
     "submit",
     (e) => {
