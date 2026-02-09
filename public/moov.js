@@ -1,9 +1,10 @@
 /* =========================================================
-   MOOV FLOW + CALENDLY (Single external JS file)
-   - Safe init even if DOMContentLoaded already fired
-   - Keeps your existing data-attributes / Webflow structure
+   MOOV FLOW + CALENDLY + HUBSPOT (Single external JS file)
    ========================================================= */
 
+/* =========================================================
+   1) MOOV FLOW (address search + multistep + valuation)
+   ========================================================= */
 (function () {
   "use strict";
 
@@ -14,12 +15,9 @@
     const apiAddressBase = "https://unity-platform-backend-2.vercel.app";
     const apiValuation = "https://unity-webflow-proxy.vercel.app/api/valuation";
 
-    // Text label thresholds (per Abdi/Nick)
     const CONFIDENCE_HIGH_MIN = 70;
     const CONFIDENCE_MED_MIN = 40;
 
-    // Nick/Abdi: 3-colour system (sharp boundaries)
-    // LOW: 0–39, MEDIUM: 40–69, HIGH: 70–100
     const SCORE_COLORS = {
       LOW: "#BD1B19",
       MEDIUM: "#F7AF2A",
@@ -93,13 +91,9 @@
 
     let valuationStarted = false;
 
-    // Anti-race guards
     let flowRunId = 0;
-
-    // Track whether we already have valuation results for current run
     let valuationCompleteForRun = false;
 
-    // Confidence animation should run only when step-valuation is shown
     let pendingConfidence = null; // { score, label }
     let hasAnimatedConfidenceForRun = false;
 
@@ -259,7 +253,6 @@
       addUnique(parts, addr?.town);
       addUnique(parts, addr?.county);
       addUnique(parts, formatUKPostcode(addr?.postcode || ""));
-
       return parts.join(", ");
     }
 
@@ -293,35 +286,21 @@
 
     /* ==============================
        MONTH LABELS (ASAP + next months)
-       - ASAP stays "ASAP" in UI; cards after it become next months
     ============================== */
     (function setupMoveDateCards() {
       const months = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
+        "January","February","March","April","May","June",
+        "July","August","September","October","November","December",
       ];
       const nowIdx = new Date().getMonth();
 
-      // Keep ASAP card as ASAP value; store real month if you ever want it
       const asapCard = document.querySelector('[data-name="move-date"][data-value="ASAP"]') || null;
       if (asapCard) asapCard.dataset.realMonth = months[nowIdx];
 
-      // Cards that you want to relabel as next months
       const monthCards = document.querySelectorAll('[data-month-label="true"]');
       monthCards.forEach((card, i) => {
         const idx = (nowIdx + (i + 1)) % 12;
         const monthName = months[idx];
-
         const labelEl = card.querySelector(".option-card-label") || card;
         if (labelEl) labelEl.textContent = monthName;
 
@@ -433,7 +412,6 @@
         "";
 
       if (looksLikeStreetViewUrl(direct)) return direct;
-
       const deep = findFirstStreetViewUrlDeep(data);
       return deep || "";
     }
@@ -482,16 +460,11 @@
         });
       };
 
-      fills.forEach((el) => {
-        if (el) animateWidth(el);
-      });
-      confFill.forEach((el) => {
-        if (el) animateWidth(el);
-      });
+      fills.forEach((el) => el && animateWidth(el));
+      confFill.forEach((el) => el && animateWidth(el));
 
       markers.forEach((m) => {
         if (!m) return;
-
         m.style.transition = `left ${ANIM_MS}ms ease`;
         m.style.left = "0%";
         m.style.transform = "translateX(-50%)";
@@ -505,7 +478,6 @@
 
       tooltips.forEach((t) => {
         if (!t) return;
-
         t.style.transition = `left ${ANIM_MS}ms ease`;
         t.style.left = "0%";
         t.style.transform = "translateX(-50%)";
@@ -528,8 +500,6 @@
       hasAnimatedConfidenceForRun = true;
 
       updateConfidenceUI(0);
-
-      // force layout
       stepVal.offsetHeight;
 
       requestAnimationFrame(() => {
@@ -721,15 +691,11 @@
 
     function goBack() {
       if (valuationAbortController) {
-        try {
-          valuationAbortController.abort();
-        } catch (e) {}
+        try { valuationAbortController.abort(); } catch (e) {}
         valuationAbortController = null;
       }
       if (resolveAbortController) {
-        try {
-          resolveAbortController.abort();
-        } catch (e) {}
+        try { resolveAbortController.abort(); } catch (e) {}
         resolveAbortController = null;
       }
       if (stepHistory.length > 1) {
@@ -932,16 +898,12 @@
       hasAnimatedConfidenceForRun = false;
 
       if (resolveAbortController) {
-        try {
-          resolveAbortController.abort();
-        } catch (e) {}
+        try { resolveAbortController.abort(); } catch (e) {}
       }
       resolveAbortController = new AbortController();
 
       if (valuationAbortController) {
-        try {
-          valuationAbortController.abort();
-        } catch (e) {}
+        try { valuationAbortController.abort(); } catch (e) {}
         valuationAbortController = null;
       }
 
@@ -1075,7 +1037,7 @@
     })();
 
     /* ==============================
-       SUBMIT LOCK
+       SUBMIT LOCK (block Webflow unless allowed)
     ============================== */
     document.addEventListener(
       "submit",
@@ -1114,9 +1076,7 @@
 
     function startValuation(payload, runId) {
       if (valuationAbortController) {
-        try {
-          valuationAbortController.abort();
-        } catch (e) {}
+        try { valuationAbortController.abort(); } catch (e) {}
         valuationAbortController = null;
       }
 
@@ -1125,9 +1085,7 @@
 
       const timeoutMs = 25000;
       const t = setTimeout(() => {
-        try {
-          controller.abort();
-        } catch (e) {}
+        try { controller.abort(); } catch (e) {}
       }, timeoutMs);
 
       fetch(apiValuation, {
@@ -1149,16 +1107,15 @@
           const { confScore, confLabel } = parseConfidence(data);
           pendingConfidence = { score: confScore, label: confLabel };
 
-          // Street view even for deskReview
           const streetUrl = pickStreetUrlFromResponse(data);
           if (streetUrl) applyStreetViewToImgs(streetUrl, runId);
 
-          // ✅ Save property image URL for HubSpot (use street view URL)
+          // ✅ Save property image URL for HubSpot (street view URL)
           if (streetUrl) {
             setFieldValue("moov_property_image_url_submitted", streetUrl);
           }
 
-          // ✅ Try to extract property size (sqm) from valuation response (robust fallbacks)
+          // ✅ Try to extract property size sqm from response
           const sizeSqm =
             data?.propertySizeSqm ??
             data?.property_size_sqm ??
@@ -1176,24 +1133,20 @@
 
           const deskReview = data?.deskReview === true;
 
-          // Tim: Market Value Range (±5%) -> low to high
           const mvLow = data?.marketValue?.low ?? 0;
           const mvHigh = data?.marketValue?.high ?? 0;
           const mvCentral = data?.marketValue?.central ?? data?.marketValue ?? data?.valuation?.mid ?? 0;
 
           const marketRangeText = mvLow && mvHigh ? `${money(mvLow)} - ${money(mvHigh)}` : "";
 
-          // Tim: Moov Offer Range -> offers.fastTrack.low/high
           const offerLow = data?.offers?.fastTrack?.low ?? 0;
           const offerHigh = data?.offers?.fastTrack?.high ?? 0;
           const offerRangeText = offerLow && offerHigh ? `${money(offerLow)} - ${money(offerHigh)}` : "";
 
-          // Fill outputs that exist on the page
-          if (outputPrice) outputPrice.textContent = marketRangeText || ""; // MARKET VALUE RANGE (low-high)
-          if (outputEstimated) outputEstimated.textContent = money(mvCentral) || ""; // estimated (central)
-          if (outputRange) outputRange.textContent = offerRangeText || ""; // MOOV OFFER RANGE
+          if (outputPrice) outputPrice.textContent = marketRangeText || "";
+          if (outputEstimated) outputEstimated.textContent = money(mvCentral) || "";
+          if (outputRange) outputRange.textContent = offerRangeText || "";
 
-          // Valid until +30d
           if (outputDate) {
             const validUntil = new Date();
             validUntil.setHours(12, 0, 0, 0);
@@ -1201,7 +1154,6 @@
             outputDate.textContent = validUntil.toLocaleDateString("en-GB");
           }
 
-          // Show correct wrap
           if (deskReview) {
             hideEl(highWrap);
             showEl(lowWrap);
@@ -1271,6 +1223,12 @@
       }
 
       setTimeout(() => {
+        // 1) HubSpot first (non-blocking)
+        if (window.__moovSubmitToHubSpot) {
+          window.__moovSubmitToHubSpot(step4Form);
+        }
+
+        // 2) Then allow Webflow submit
         step4Form.classList.add("allow-webflow-submit");
 
         if (typeof step4Form.requestSubmit === "function") {
@@ -1294,19 +1252,18 @@
   }
 })();
 
+
 /* =========================================================
-   CALENDLY INLINE EMBED + PREFILL (external JS-safe)
+   2) CALENDLY INLINE EMBED + PREFILL
    - Requires Calendly loader in <head>:
      <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
    ========================================================= */
-
 (function () {
   "use strict";
 
   const EVENT_URL = "https://calendly.com/moovhomes/new-meeting";
   const SLOT_ID = "calendly-modal-slot";
 
-  // Webflow input selectors (ne mijenjaš ih)
   const SELECTORS = {
     first: "#First-name",
     last: "#Last-name",
@@ -1322,10 +1279,6 @@
     return (raw || "").trim().replace(/[^\d+]/g, "");
   }
 
-  // UK normalize:
-  // 07888...   -> +447888...
-  // +44 7888.. -> +447888...
-  // 447888...  -> +447888...
   function normalizeUKPhone(raw) {
     let p = cleanPhone(raw);
     if (!p) return "";
@@ -1341,15 +1294,8 @@
       return p;
     }
 
-    if (p.startsWith("0")) {
-      p = "+44" + p.slice(1);
-      return p;
-    }
-
-    if (p.startsWith("7")) {
-      p = "+44" + p;
-      return p;
-    }
+    if (p.startsWith("0")) return "+44" + p.slice(1);
+    if (p.startsWith("7")) return "+44" + p;
 
     return p;
   }
@@ -1412,28 +1358,25 @@
   document.addEventListener("click", function (e) {
     const btn = e.target.closest('[data-open-calendly="true"]');
     if (!btn) return;
-
     setTimeout(openCalendly, 200);
   });
 })();
 
-/* ============================
-   HUBSPOT DUAL SUBMIT (Moov)
-   - Sends Webflow submission to HubSpot (backend ingestion)
-   - Does NOT block Webflow submit
-   - Uses HS v3 endpoint
-============================ */
+
+/* =========================================================
+   3) HUBSPOT DUAL SUBMIT (Moov)
+   - Sends Webflow submission to HubSpot (non-blocking)
+   - Guard against duplicate sends
+   ========================================================= */
 (function hubspotDualSubmitMoov() {
+  "use strict";
+
   const PORTAL_ID = "14719287";
   const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
 
   const ENDPOINT = `https://api.hsforms.com/submissions/v3/integration/submit/${encodeURIComponent(
     PORTAL_ID
   )}/${encodeURIComponent(FORM_GUID)}`;
-
-  /* ============================
-     HUBSPOT INTERNAL VALUE MAPS
-  ============================ */
 
   const MAP_SELLING_REASON = {
     "Buying onwards": "buying_onwards",
@@ -1465,8 +1408,6 @@
     "No": "no",
   };
 
-  // move timeframe internal values:
-  // asap, within_1_month, within_2_months, within_3_months, within_4_months, six_plus_months
   function mapMoveTimeframe(uiValue) {
     const v = (uiValue || "").trim();
     if (!v) return "";
@@ -1474,7 +1415,6 @@
     if (v === "ASAP") return "asap";
     if (v === "6+ months" || v === "6+ Months" || v === "6 months+" || v === "6+ month") return "six_plus_months";
 
-    // Your UI uses month names; convert month -> within_X_month(s)
     const months = [
       "January","February","March","April","May","June",
       "July","August","September","October","November","December",
@@ -1493,7 +1433,6 @@
     if (diff === 4) return "within_4_months";
     if (diff >= 5) return "six_plus_months";
 
-    // diff === 0 fallback
     return "within_1_month";
   }
 
@@ -1547,13 +1486,11 @@
   }
 
   function buildFields(formEl) {
-    // Contact details (standard HS property names)
     const firstname = formEl.querySelector("#First-name")?.value?.trim() || "";
     const lastname  = formEl.querySelector("#Last-name")?.value?.trim() || "";
     const email     = formEl.querySelector('input[type="email"]')?.value?.trim() || "";
     const phone     = formEl.querySelector("#Telephone-or-mobile-number")?.value?.trim() || "";
 
-    // Hidden fields (your UI values)
     const moveUI     = getInputVal(formEl, "move-date");
     const reasonUI   = getInputVal(formEl, "selling-reason");
     const nextHomeUI = getInputVal(formEl, "next-home");
@@ -1563,17 +1500,14 @@
     const ownerEstimate = safeNum(getInputVal(formEl, "worth_estimate"));
     const ownerNotSure  = (getInputVal(formEl, "worth_not_sure") || "").toLowerCase() === "true";
 
-    // NEW property fields you added to step-4 form (HubSpot spec)
     const propAddress  = getInputVal(formEl, "moov_property_address_submitted");
     const propPostcode = getInputVal(formEl, "moov_property_postcode_submitted");
     const propUprn     = getInputVal(formEl, "moov_property_uprn_submitted");
     const propImageUrl = getInputVal(formEl, "moov_property_image_url_submitted");
     const propSizeSqm  = safeNum(getInputVal(formEl, "moov_property_size_sqm_submitted"));
 
-    // Consent checkbox you renamed
     const termsAccepted = getBoolFromCheckbox(formEl, "moov_terms_accepted");
 
-    // Outputs (from UI)
     const marketRangeText = getText("[data-valuation-price='true']");
     const offerRangeText  = getText("[data-offer-range='true']");
     const validUntilText  = getText("[data-valuation-date='true']");
@@ -1587,7 +1521,6 @@
     const confScore = confScoreMatch ? Number(confScoreMatch[1]) : "";
     const confBand = parseConfidenceBand(confText);
 
-    // ✅ Map dropdowns to HubSpot INTERNAL VALUES
     const hsMoveTimeframe = mapMoveTimeframe(moveUI);
     const hsReason = MAP_SELLING_REASON[reasonUI] || "";
     const hsNextHome = MAP_NEXT_HOME[nextHomeUI] || "";
@@ -1600,30 +1533,24 @@
       { name: "email", value: email },
       { name: "phone", value: phone },
 
-      // Q1/Q2
       { name: "move_timeframe", value: hsMoveTimeframe },
       { name: "moov_reason_for_sale_submitted", value: hsReason },
 
-      // Q3 conditional (only one will have value)
       { name: "moov_next_home_status_submitted", value: hsNextHome },
       { name: "moov_relocation_work_related_submitted", value: hsReloc },
       { name: "property_currently_tenanted_submitted", value: hsTenanted },
 
-      // Q4
       { name: "moov_owner_estimate_value_submitted", value: ownerEstimate === "" ? "" : String(ownerEstimate) },
       { name: "moov_owner_estimate_not_sure_submitted", value: ownerNotSure ? "true" : "false" },
 
-      // Consent
       { name: "moov_terms_accepted", value: termsAccepted || "" },
 
-      // Property data (NEW)
       { name: "moov_property_address_submitted", value: propAddress },
       { name: "moov_property_postcode_submitted", value: propPostcode },
       { name: "moov_property_uprn_submitted", value: propUprn },
       { name: "moov_property_image_url_submitted", value: propImageUrl },
       { name: "moov_property_size_sqm_submitted", value: propSizeSqm === "" ? "" : String(propSizeSqm) },
 
-      // Valuation outputs
       { name: "moov_cons_valuation_submitted", value: safeNum(estimatedText) === "" ? "" : String(safeNum(estimatedText)) },
       { name: "moov_market_value_low_submitted", value: mv.a === "" ? "" : String(mv.a) },
       { name: "moov_market_value_high_submitted", value: mv.b === "" ? "" : String(mv.b) },
@@ -1642,6 +1569,13 @@
 
   async function submitToHubSpot(formEl) {
     try {
+      if (!formEl) return;
+
+      // ✅ Guard against duplicates (manual call + submit listener)
+      if (formEl.dataset.hsSent === "true") return;
+      formEl.dataset.hsSent = "true";
+      setTimeout(() => { try { delete formEl.dataset.hsSent; } catch (e) {} }, 2000);
+
       const hutk = getCookie("hubspotutk");
 
       const body = {
@@ -1654,7 +1588,6 @@
         },
       };
 
-      // fire & forget (non-blocking)
       fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1666,10 +1599,10 @@
     }
   }
 
-  // expose (optional)
+  // expose (used by Moov submit handler)
   window.__moovSubmitToHubSpot = submitToHubSpot;
 
-  // attach once (capture phase)
+  // also listen (safe because we guard duplicates)
   document.addEventListener(
     "submit",
     (e) => {
