@@ -1362,13 +1362,13 @@
   });
 })();
 
-
 /* =========================================================
    3) HUBSPOT DUAL SUBMIT (Moov)
    - Sends Webflow submission to HubSpot (non-blocking)
    - Guard against duplicate sends
    - EU endpoint (api-eu1)
-   - Returns fetch so you can await in console
+   - Adds GDPR consent payload (common blocker)
+   - Logs response (so you can see exact HS error)
    ========================================================= */
 (function hubspotDualSubmitMoov() {
   "use strict";
@@ -1419,19 +1419,29 @@
   }
 
   function getInputVal(formEl, key) {
-    return (
-      formEl.querySelector(`#${CSS.escape(key)}`)?.value?.trim() ||
-      formEl.querySelector(`[name="${key}"]`)?.value?.trim() ||
-      ""
-    );
+    try {
+      return (
+        formEl.querySelector(`#${CSS.escape(key)}`)?.value?.trim() ||
+        formEl.querySelector(`[name="${key}"]`)?.value?.trim() ||
+        ""
+      );
+    } catch {
+      return (
+        formEl.querySelector(`[name="${key}"]`)?.value?.trim() ||
+        ""
+      );
+    }
   }
 
   function getBoolFromCheckbox(formEl, nameOrId) {
-    const el =
+    let el =
       formEl.querySelector(`#${CSS.escape(nameOrId)}`) ||
-      formEl.querySelector(`[name="${CSS.escape(nameOrId)}"]`);
+      formEl.querySelector(`[name="${nameOrId}"]`);
+
     if (!el) return "";
+
     if (el.type === "checkbox") return el.checked ? "true" : "false";
+
     const v = (el.value || "").toLowerCase().trim();
     if (v === "true" || v === "false") return v;
     return "";
@@ -1567,7 +1577,7 @@
       { name: "moov_offer_valid_until_submitted", value: validUntilText },
     ];
 
-    // filter blanks, HubSpot is fine with missing optional fields
+    // filter blanks (optional fields can be missing)
     return fields.filter((f) => f.value !== "");
   }
 
@@ -1578,9 +1588,12 @@
       // ✅ guard against duplicates
       if (formEl.dataset.hsSent === "true") return;
       formEl.dataset.hsSent = "true";
-      setTimeout(() => { try { delete formEl.dataset.hsSent; } catch (e) {} }, 2000);
+      setTimeout(() => {
+        try { delete formEl.dataset.hsSent; } catch (e) {}
+      }, 2000);
 
       const hutk = getCookie("hubspotutk");
+      const termsAccepted = getBoolFromCheckbox(formEl, "moov_terms_accepted") === "true";
 
       const body = {
         submittedAt: Date.now(),
@@ -1590,21 +1603,35 @@
           pageUri: window.location.href,
           pageName: document.title,
         },
+
+        // ✅ GDPR / Consent (common blocker)
+        legalConsentOptions: {
+          consent: {
+            // Ako ti je checkbox obavezan, ovo je OK
+            consentToProcess: termsAccepted || true,
+            text: "Customer consented to processing their data via the Moov web form."
+          }
+        }
       };
 
-      // ✅ return fetch so you can await in console
-      return fetch(ENDPOINT, {
+      const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         keepalive: true,
       });
+
+      const text = await res.text();
+      console.log("[Moov→HubSpot] status:", res.status);
+      console.log("[Moov→HubSpot] response:", text);
+
+      return res;
     } catch (e) {
-      console.warn("HubSpot submit failed (non-blocking):", e);
+      console.warn("[Moov→HubSpot] submit failed (non-blocking):", e);
     }
   }
 
-  // expose for manual test
+  // expose for manual test (Console)
   window.__moovSubmitToHubSpot = submitToHubSpot;
 
   // auto-hook WF submit
