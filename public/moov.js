@@ -141,8 +141,9 @@
         s.startsWith("apt") ||
         s.startsWith("unit") ||
         s.startsWith("studio")
-      )
+      ) {
         return "flat";
+      }
       return "house";
     }
 
@@ -180,12 +181,15 @@
     function openResults() {
       resultsContainer?.classList.add("is-open");
     }
+
     function closeResults() {
       resultsContainer?.classList.remove("is-open");
     }
+
     function clearResults() {
       if (resultsList) resultsList.innerHTML = "";
     }
+
     function clearSelection() {
       selectedAddress = null;
       setOfferBtnEnabled(false);
@@ -197,6 +201,7 @@
       skeletonWrap.style.display = "block";
       skeletonWrap.classList.add("is-active");
     }
+
     function hideSkeleton() {
       if (!skeletonWrap) return;
       skeletonWrap.classList.remove("is-active");
@@ -206,10 +211,12 @@
     function getField(key) {
       return document.getElementById(key) || document.querySelector(`[name="${key}"]`);
     }
+
     function setFieldValue(key, val) {
       const f = getField(key);
       if (f) f.value = val ?? "";
     }
+
     function getFieldValue(key) {
       const f = getField(key);
       return (f?.value || "").trim();
@@ -221,6 +228,7 @@
       el.style.opacity = "1";
       el.style.visibility = "visible";
     }
+
     function hideEl(el) {
       if (!el) return;
       el.style.display = "none";
@@ -231,6 +239,7 @@
       if (valLoading) valLoading.style.display = "block";
       if (valStatus && msg) valStatus.textContent = msg;
     }
+
     function showValResults() {
       if (valLoading) valLoading.style.display = "none";
       if (valResults) valResults.style.display = "block";
@@ -313,7 +322,11 @@
        PLACEHOLDER IMAGE CONTROL + SHIMMER
     ============================== */
     function getAllValuationImgs() {
-      return Array.from(document.querySelectorAll('img[data-valuation-image="true"]'));
+      return Array.from(
+        document.querySelectorAll(
+          'img[data-valuation-image="true"], img.step-property-image'
+        )
+      );
     }
 
     function setImageShimmerLoading(isLoading) {
@@ -351,14 +364,24 @@
     }
 
     function applyStreetViewToImgs(streetUrl, runId) {
-      if (!streetUrl) return;
+      if (!streetUrl) {
+        console.log("[Moov] No street URL provided");
+        return;
+      }
 
       const imgs = getAllValuationImgs();
-      if (!imgs.length) return;
+      console.log("[Moov] Target valuation images:", imgs);
+
+      if (!imgs.length) {
+        console.log("[Moov] No valuation images found in DOM");
+        return;
+      }
 
       const url = streetUrl + (streetUrl.includes("?") ? "&" : "?") + "cb=" + encodeURIComponent(String(runId));
+      console.log("[Moov] Testing street image URL:", url);
 
       const tester = new Image();
+
       tester.onload = () => {
         if (runId !== flowRunId) return;
 
@@ -371,20 +394,31 @@
         });
 
         setImageShimmerLoading(false);
+        console.log("[Moov] Street image applied successfully:", url);
       };
 
-      tester.onerror = () => {};
+      tester.onerror = () => {
+        console.log("[Moov] Street image failed to load:", url);
+      };
+
       tester.src = url;
     }
 
     function looksLikeStreetViewUrl(s) {
       if (!s || typeof s !== "string") return false;
-      return s.includes("maps.googleapis.com/maps/api/streetview");
+      return (
+        s.includes("maps.googleapis.com/maps/api/streetview") ||
+        s.includes("googleapis.com/maps/api/streetview")
+      );
     }
 
     function findFirstStreetViewUrlDeep(obj, depth = 0) {
-      if (!obj || depth > 6) return "";
-      if (typeof obj === "string") return looksLikeStreetViewUrl(obj) ? obj : "";
+      if (!obj || depth > 8) return "";
+
+      if (typeof obj === "string") {
+        return looksLikeStreetViewUrl(obj) ? obj : "";
+      }
+
       if (Array.isArray(obj)) {
         for (const v of obj) {
           const found = findFirstStreetViewUrlDeep(v, depth + 1);
@@ -392,6 +426,7 @@
         }
         return "";
       }
+
       if (typeof obj === "object") {
         for (const k of Object.keys(obj)) {
           const v = obj[k];
@@ -399,19 +434,40 @@
           if (found) return found;
         }
       }
+
       return "";
     }
 
     function pickStreetUrlFromResponse(data) {
-      const direct =
-        data?.streetViewUrl ||
-        data?.streetView?.url ||
-        data?.streetView?.imageUrl ||
-        data?.streetView?.streetViewUrl ||
-        data?.streetViewURL ||
-        "";
+      const candidates = [
+        data?.streetViewUrl,
+        data?.streetView?.url,
+        data?.streetView?.imageUrl,
+        data?.streetView?.streetViewUrl,
+        data?.streetViewURL,
+        data?.street_view_url,
+        data?.streetview_url,
+        data?.streetImage,
+        data?.street_image,
+        data?.imageUrl,
+        data?.image_url,
+        data?.image,
+        data?.googleStreetViewUrl,
+        data?.google_street_view_url,
+        data?.property?.streetViewUrl,
+        data?.property?.street_view_url,
+        data?.property?.imageUrl,
+        data?.property?.image_url,
+        data?.valuation?.streetViewUrl,
+        data?.valuation?.street_view_url,
+        data?.result?.streetViewUrl,
+        data?.result?.street_view_url,
+      ].filter(Boolean);
 
-      if (looksLikeStreetViewUrl(direct)) return direct;
+      for (const url of candidates) {
+        if (looksLikeStreetViewUrl(url)) return url;
+      }
+
       const deep = findFirstStreetViewUrlDeep(data);
       return deep || "";
     }
@@ -588,6 +644,7 @@
         scrollThumb.setPointerCapture?.(e.pointerId);
         document.body.style.userSelect = "none";
       }
+
       function onPointerMove(e) {
         if (!dragging) return;
 
@@ -604,6 +661,7 @@
         const scrollDelta = (dy / maxThumbTop) * maxScrollTop;
         resultsList.scrollTop = startScrollTop + scrollDelta;
       }
+
       function onPointerUp() {
         dragging = false;
         document.body.style.userSelect = "";
@@ -622,6 +680,7 @@
         updateThumbSize();
         syncThumbToScroll();
       };
+
       refreshNow();
       return refreshNow;
     }
@@ -944,7 +1003,6 @@
           el.textContent = fullAddressText;
         });
 
-        // ✅ Populate HubSpot property hidden fields (address/postcode/uprn)
         setFieldValue("moov_property_address_submitted", fullAddressText);
         setFieldValue(
           "moov_property_postcode_submitted",
@@ -1102,20 +1160,27 @@
         .then((data) => {
           if (runId !== flowRunId) return;
 
+          console.log("[Moov] VALUATION RESPONSE:", data);
+
           valuationCompleteForRun = true;
 
           const { confScore, confLabel } = parseConfidence(data);
           pendingConfidence = { score: confScore, label: confLabel };
 
           const streetUrl = pickStreetUrlFromResponse(data);
-          if (streetUrl) applyStreetViewToImgs(streetUrl, runId);
+          console.log("[Moov] STREET URL FOUND:", streetUrl);
+          console.log("[Moov] TARGET IMAGES NOW:", getAllValuationImgs());
 
-          // ✅ Save property image URL for HubSpot (street view URL)
+          if (streetUrl) {
+            applyStreetViewToImgs(streetUrl, runId);
+          } else {
+            console.log("[Moov] No valid Street View URL found in valuation response");
+          }
+
           if (streetUrl) {
             setFieldValue("moov_property_image_url_submitted", streetUrl);
           }
 
-          // ✅ Try to extract property size sqm from response
           const sizeSqm =
             data?.propertySizeSqm ??
             data?.property_size_sqm ??
@@ -1170,7 +1235,7 @@
           clearTimeout(t);
           if (err && err.name === "AbortError") return;
 
-          console.error(err);
+          console.error("[Moov] Valuation request failed:", err);
 
           hideEl(highWrap);
           showEl(lowWrap);
@@ -1223,12 +1288,10 @@
       }
 
       setTimeout(() => {
-        // 1) HubSpot first (non-blocking)
         if (window.__moovSubmitToHubSpot) {
           window.__moovSubmitToHubSpot(step4Form);
         }
 
-        // 2) Then allow Webflow submit
         step4Form.classList.add("allow-webflow-submit");
 
         if (typeof step4Form.requestSubmit === "function") {
@@ -1244,14 +1307,12 @@
     });
   }
 
-  // Safe init no matter how/when the script loads
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initMoov);
   } else {
     initMoov();
   }
 })();
-
 
 /* =========================================================
    2) CALENDLY INLINE EMBED + PREFILL
@@ -1315,7 +1376,6 @@
       email: email,
     };
 
-    // Phone works only if Calendly event has a custom question with key a1
     if (phone) {
       prefill.customAnswers = { a1: phone };
     }
@@ -1376,7 +1436,6 @@
   const PORTAL_ID = "147192876";
   const FORM_GUID = "dcb4bb33-377b-4e77-a5d1-4d3689acc5ff";
 
-  // ✅ MUST be EU for your portal (app-eu1)
   const ENDPOINT =
     `https://api-eu1.hsforms.com/submissions/v3/integration/submit/${encodeURIComponent(PORTAL_ID)}/${encodeURIComponent(FORM_GUID)}`;
 
@@ -1577,7 +1636,6 @@
       { name: "moov_offer_valid_until_submitted", value: validUntilText },
     ];
 
-    // filter blanks (optional fields can be missing)
     return fields.filter((f) => f.value !== "");
   }
 
@@ -1585,7 +1643,6 @@
     try {
       if (!formEl) return;
 
-      // ✅ guard against duplicates
       if (formEl.dataset.hsSent === "true") return;
       formEl.dataset.hsSent = "true";
       setTimeout(() => {
@@ -1603,11 +1660,8 @@
           pageUri: window.location.href,
           pageName: document.title,
         },
-
-        // ✅ GDPR / Consent (common blocker)
         legalConsentOptions: {
           consent: {
-            // Ako ti je checkbox obavezan, ovo je OK
             consentToProcess: termsAccepted || true,
             text: "Customer consented to processing their data via the Moov web form."
           }
@@ -1631,10 +1685,8 @@
     }
   }
 
-  // expose for manual test (Console)
   window.__moovSubmitToHubSpot = submitToHubSpot;
 
-  // auto-hook WF submit
   document.addEventListener(
     "submit",
     (e) => {
